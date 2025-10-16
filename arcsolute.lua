@@ -3,8 +3,11 @@
 -- long press: toggle between play and config modes
 -- short press: play mode resets values; config mode (cc/channel) toggles option
 
-LED_LEVEL_LOW = 5
-LED_LEVEL_HIGH = 15
+DEFAULT_LED_LEVEL_LOW = 5
+DEFAULT_LED_LEVEL_HIGH = 15
+
+LED_LEVEL_LOW = DEFAULT_LED_LEVEL_LOW
+LED_LEVEL_HIGH = DEFAULT_LED_LEVEL_HIGH
 
 LED_COUNT = 64
 SCRIPT_ID = "arcsolute"
@@ -13,12 +16,26 @@ TICKS_PER_CC = 8
 MODE_PLAY = 1
 MODE_CC = 2
 MODE_CH = 3
+MODE_BRIGHTNESS = 4
 
 mode_names = {
     [MODE_PLAY] = "play",
     [MODE_CC] = "cc",
-    [MODE_CH] = "channel"
+    [MODE_CH] = "channel",
+    [MODE_BRIGHTNESS] = "brightness"
 }
+
+local CONFIG_MODES = {MODE_CC, MODE_CH, MODE_BRIGHTNESS}
+
+local function next_config_mode(current)
+    for index, value in ipairs(CONFIG_MODES) do
+        if value == current then
+            local next_index = (index % #CONFIG_MODES) + 1
+            return CONFIG_MODES[next_index]
+        end
+    end
+    return CONFIG_MODES[1]
+end
 
 DEFAULT_CCS = {10, 11, 12, 13}
 DEFAULT_CH = 1
@@ -70,6 +87,32 @@ local function clamp(v, min_v, max_v)
     if v < min_v then return min_v end
     if v > max_v then return max_v end
     return v
+end
+
+local function clamp_brightness(low, high)
+    low = clamp(low or DEFAULT_LED_LEVEL_LOW, 1, 10)
+    high = clamp(high or DEFAULT_LED_LEVEL_HIGH, 2, 15)
+
+    if high <= low then
+        high = clamp(low + 1, 2, 15)
+        if high <= low then
+            low = clamp(high - 1, 1, 10)
+        end
+    end
+
+    return low, high
+end
+
+local function set_brightness(low, high)
+    LED_LEVEL_LOW = low
+    LED_LEVEL_HIGH = high
+
+    if not c.brightness then
+        c.brightness = {}
+    end
+
+    c.brightness.low = low
+    c.brightness.high = high
 end
 
 local function wrap_led(index)
@@ -254,6 +297,17 @@ local function redraw_ch_mode()
     end
 end
 
+local function preview_brightness()
+    arc_led_all(1, LED_LEVEL_LOW)
+    arc_led_all(2, LED_LEVEL_LOW)
+    arc_led_all(3, LED_LEVEL_HIGH)
+    arc_led_all(4, LED_LEVEL_HIGH)
+end
+
+local function redraw_brightness_mode()
+    preview_brightness()
+end
+
 function redraw()
     for ring = 1, 4 do
         arc_led_all(ring, 0)
@@ -265,12 +319,19 @@ function redraw()
         redraw_cc_mode()
     elseif mode == MODE_CH then
         redraw_ch_mode()
+    elseif mode == MODE_BRIGHTNESS then
+        redraw_brightness_mode()
     end
 
     arc_refresh()
 end
 
 local function save_state()
+    if not c.brightness then
+        c.brightness = {}
+    end
+    c.brightness.low = LED_LEVEL_LOW
+    c.brightness.high = LED_LEVEL_HIGH
     pset_write(1, c)
 end
 
@@ -291,7 +352,7 @@ local function handle_short_press()
         return
     end
 
-    mode = (mode == MODE_CC) and MODE_CH or MODE_CC
+    mode = next_config_mode(mode)
 
     for ring = 1, 4 do
         reset_ring_cache(ring)
@@ -329,6 +390,8 @@ function init()
                 ch = DEFAULT_CH
             }
         end
+        local low, high = clamp_brightness(DEFAULT_LED_LEVEL_LOW, DEFAULT_LED_LEVEL_HIGH)
+        set_brightness(low, high)
         c.script = SCRIPT_ID
         save_state()
     else
@@ -340,6 +403,11 @@ function init()
             c[ring].cc = clamp(c[ring].cc or (DEFAULT_CCS[ring] or DEFAULT_CCS[1]), 0, 127)
             c[ring].ch = clamp(c[ring].ch or DEFAULT_CH, 1, 16)
         end
+        local stored_low, stored_high = clamp_brightness(
+            c.brightness and c.brightness.low,
+            c.brightness and c.brightness.high
+        )
+        set_brightness(stored_low, stored_high)
     end
 
     mode = MODE_PLAY
@@ -388,6 +456,34 @@ function arc(ring, delta)
             status("ring %d ch: %d", ring, target)
             draw_ch(ring, false)
             arc_refresh()
+        end
+    elseif mode == MODE_BRIGHTNESS then
+        if ring <= 2 then
+            local current = LED_LEVEL_LOW
+            local max_value = math.max(1, math.min(10, LED_LEVEL_HIGH - 1))
+            local target = apply_steps(ring, delta, current, 1, max_value, function(value, steps)
+                return value + steps
+            end)
+
+            if target then
+                set_brightness(target, LED_LEVEL_HIGH)
+                status("brightness low: %d", target)
+                preview_brightness()
+                arc_refresh()
+            end
+        else
+            local current = LED_LEVEL_HIGH
+            local min_value = clamp(LED_LEVEL_LOW + 1, 2, 15)
+            local target = apply_steps(ring, delta, current, min_value, 15, function(value, steps)
+                return value + steps
+            end)
+
+            if target then
+                set_brightness(LED_LEVEL_LOW, target)
+                status("brightness high: %d", target)
+                preview_brightness()
+                arc_refresh()
+            end
         end
     end
 end

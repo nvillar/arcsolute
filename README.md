@@ -10,7 +10,7 @@ See [iii docs](https://monome.org/docs/iii/) for instructions on how to upload s
 ## Using
 - knob turning: sends a MIDI CC value (0-127) on the assigned CC number and MIDI channel
 - long-pressing button: toggle between play and config modes
-- short-pressing button: play mode resets values; config mode toggles cc/channel option
+- short-pressing button: play mode resets values; config mode cycles cc/channel/brightness options
 
 ## Configuration mode
 The configuration mode is based on the [cycles script](https://monome.org/docs/iii/library/cycles/) by tehn.
@@ -57,3 +57,7 @@ channel
 16       │││││││││││││││█
 ```
   
+
+### Setting the Brightness
+The shared LED brightness can be adjusted between low and high levels while in configuration mode. The left pair of knobs sets the low brightness (values 1–10) and the right pair sets the high brightness (values 2–15). The high level must always stay at least one step above the low level, so turn the right knobs up if you need more headroom.
+
