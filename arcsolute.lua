@@ -327,12 +327,22 @@ function redraw()
 end
 
 local function save_state()
-    if not c.brightness then
-        c.brightness = {}
+    local persist = {
+        script = SCRIPT_ID,
+        brightness = {
+            low = LED_LEVEL_LOW,
+            high = LED_LEVEL_HIGH
+        }
+    }
+
+    for ring = 1, 4 do
+        persist[ring] = {
+            cc = c[ring].cc or (DEFAULT_CCS[ring] or DEFAULT_CCS[1]),
+            ch = c[ring].ch or DEFAULT_CH
+        }
     end
-    c.brightness.low = LED_LEVEL_LOW
-    c.brightness.high = LED_LEVEL_HIGH
-    pset_write(1, c)
+
+    pset_write(1, persist)
 end
 
 local function reset_values()
@@ -382,32 +392,32 @@ end
 function init()
     print("\narcsolute starting\n")
     local stored = pset_read(1)
-    if not stored or stored.script ~= SCRIPT_ID then
-        for ring = 1, 4 do
-            c[ring] = {
-                value = 0,
-                cc = DEFAULT_CCS[ring] or DEFAULT_CCS[1],
-                ch = DEFAULT_CH
-            }
+    local has_stored = stored and stored.script == SCRIPT_ID
+
+    for ring = 1, 4 do
+        c[ring] = c[ring] or {}
+        c[ring].value = 0
+
+        local default_cc = DEFAULT_CCS[ring] or DEFAULT_CCS[1]
+        if has_stored and stored[ring] then
+            c[ring].cc = clamp(stored[ring].cc or default_cc, 0, 127)
+            c[ring].ch = clamp(stored[ring].ch or DEFAULT_CH, 1, 16)
+        else
+            c[ring].cc = default_cc
+            c[ring].ch = DEFAULT_CH
         end
-        local low, high = clamp_brightness(DEFAULT_LED_LEVEL_LOW, DEFAULT_LED_LEVEL_HIGH)
-        set_brightness(low, high)
-        c.script = SCRIPT_ID
-        save_state()
-    else
-        c = stored
-        c.script = SCRIPT_ID
-        for ring = 1, 4 do
-            c[ring] = c[ring] or {}
-            c[ring].value = clamp(c[ring].value or 0, 0, 127)
-            c[ring].cc = clamp(c[ring].cc or (DEFAULT_CCS[ring] or DEFAULT_CCS[1]), 0, 127)
-            c[ring].ch = clamp(c[ring].ch or DEFAULT_CH, 1, 16)
-        end
+    end
+
+    if has_stored then
         local stored_low, stored_high = clamp_brightness(
-            c.brightness and c.brightness.low,
-            c.brightness and c.brightness.high
+            stored.brightness and stored.brightness.low,
+            stored.brightness and stored.brightness.high
         )
         set_brightness(stored_low, stored_high)
+    else
+        local low, high = clamp_brightness(DEFAULT_LED_LEVEL_LOW, DEFAULT_LED_LEVEL_HIGH)
+        set_brightness(low, high)
+        save_state()
     end
 
     mode = MODE_PLAY
