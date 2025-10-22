@@ -514,4 +514,34 @@ function key_timer()
     handle_long_press()
 end
 
+function midi_rx(ch, status_byte, data1, data2)
+    -- only react to Control Change (0xB0-0xBF) messages for rings on the matching channel
+    if status_byte ~= 0xB0 then return end
+
+    local cc = data1 or 0
+    local value = clamp(data2 or 0, 0, 127)
+    local channel = (ch or 0) + 1 -- API reports channels 0-15, internal state uses 1-16
+    local needs_refresh = false
+
+    status("midi rx: ch %d status %d data1 %d data2 %d", channel, status_byte, cc, value)
+
+    for ring = 1, 4 do
+        local ring_state = c[ring]
+        if ring_state.cc == cc and ring_state.ch == channel then
+            pending_ticks[ring] = 0
+            if ring_state.value ~= value then
+                ring_state.value = value
+                if mode == MODE_PLAY then
+                    draw_value(ring, false)
+                    needs_refresh = true
+                end
+            end
+        end
+    end
+
+    if needs_refresh then
+        arc_refresh()
+    end
+end
+
 init()
